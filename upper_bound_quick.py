@@ -130,14 +130,14 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
     for i in range(m - 1):
         lower_cum[i] = 1 - round(sup_bin(n, min(l // F_weights[i + 1], n), delta), 8)
     lower_cum[-2], lower_cum[-1] = 0, 1
-    upper_bound = 0
+    curr_upper_bound = 0
 
     # Constraints are defined
     constraints = [LinearConstraint(np.eye(m + 1), lower, upper),  # Each probability is between 0 and 1
                    LinearConstraint(np.tri(m + 1), lower_cum, upper),  # Each cumulative probability is upper bounded
                                                                        #  (see Prop.X) to prevent too small values for F
-                   {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, upper_bound, -1)}]  # Keeps track of the
-                                                                                                    #  best bound seen
+                {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound, -1)}]  # Keeps track of
+                                                                                                      #  the best bound
     t_init = time()
     # All the possible loss occurrences (< l) are computed
     combinations = K(n, l, F_weights)
@@ -153,10 +153,10 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
         initial_guess = np.zeros(m + 1) + 1 / m  # initial guess can be anything
         result = minimize(obj, initial_guess, constraints=constraints)  # Computes Chebychev center of current region
         if F(result.x[:-1], n, combinations, m) > delta:
-            alpha = np.dot(result.x[:-1], x_weights)
-            print(f"Current bound value: {round(alpha, 6)}...")
+            curr_upper_bound = np.dot(result.x[:-1], x_weights)
+            print(f"Current bound value: {round(curr_upper_bound, 6)}...")
             # If F > delta, bound computed is valid; updates const. #3 so that each new center must have better bound
-            constraints[2] = {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, alpha, -1)}
+            constraints[2] = {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound, -1)}
         else:
             jac = gradient_F(result.x[:-1], n, jac_combinations)
             if np.sqrt(np.dot(jac, jac)) < 1e-10:
@@ -165,11 +165,12 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
             # If F < delta, bound computed is not valid; add constraint so that new center must have better F than that
             constraints.append({'type': 'ineq', 'fun': ineq_constraint, 'args': (jac.copy(), bias.copy(), -1)})
 
-        upper_bounds.append(upper_bound)
+        upper_bounds.append(curr_upper_bound)
         if len(upper_bounds) > 100:
             if upper_bounds[-1] - upper_bounds[-100] <= tol:
                 break
     print(f"\nFinal upper bound: {round(upper_bounds[-1], 6)} (took {round(time() - t_init, 2)} sec. to compute, once combinations were computed).")
+    print(result.x[:-1])
     return upper_bounds[-1]
 
 n = 10
@@ -177,7 +178,7 @@ l = 2
 delta = 0.05
 a = optimal_test_bound(1000, delta)
 b = 1
-x_weights = [0.2, 0.6, 0.8, 1]
+x_weights = [0.2, 1]
 tol = 1e-5
 
 bound_optimization(n, l, a, b, x_weights, delta, tol)
