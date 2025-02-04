@@ -128,7 +128,7 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
     upper[-1] = np.inf
     lower_cum = np.zeros(m + 1)
     for i in range(m - 1):
-        lower_cum[i] = 1 - round(sup_bin(n, min(l // F_weights[i + 1], n), delta), 8)
+        lower_cum[i] = sup_bin(n, min(l // F_weights[i + 1], n), delta) - 1
     lower_cum[-2], lower_cum[-1] = 0, 1
     curr_upper_bound = 0
 
@@ -178,7 +178,7 @@ l = 2
 delta = 0.05
 a = optimal_test_bound(1000, delta)
 b = 1
-x_weights = [0.2, 1]
+x_weights = [0.1, 0.2, 0.6, 0.8, 1]
 tol = 1e-5
 
 bound_optimization(n, l, a, b, x_weights, delta, tol)
