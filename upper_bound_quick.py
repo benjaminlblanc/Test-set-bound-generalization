@@ -1,21 +1,10 @@
 from scipy.optimize import minimize, LinearConstraint
 from time import time
-from utils import log_stirling_approximation, sup_bin
+from utils import log_stirling_approximation, sup_bin, optimal_test_bound, multinomial
 
 import numpy as np
 import itertools
 import math
-
-
-def lower_test_bound(m, d):
-    return 1 - math.exp(-math.log(1 / d) / m)
-
-def multinomial(lst, n):
-    assert np.sum(lst) == n
-    res = log_stirling_approximation(n)
-    for a in lst:
-        res -= log_stirling_approximation(a)
-    return math.exp(res)
 
 
 def K(n, l, weights):
@@ -114,80 +103,81 @@ def gradient_F(p, n, combinations):
 
     return gradient
 
-def equality_const(p):
-    return np.sum(p[:-1]) - 1
-
-def inequality_const(p, weights, alpha, tol):
+def ineq_constraint(p, weights, alpha, tol):
     return np.dot(p[:-1], weights) + tol * np.dot(weights, weights) * p[-1] - alpha
 
 def obj(p):
     """objective function, to be solved."""
     return -p[-1]
 
-def opt(n, l, a, b, x_weights, delta, tol):
+def bound_optimization(n, l, a, b, x_weights, delta, tol):
     print(f"** Lauching bound computation with the following parameters: n = {n}, l = {l}, a = {round(a, 6)}, b = {b}, "
           f"x_weights = {x_weights}, delta = {delta}, tol = {tol} **")
+    # Sanity checks
     assert b == x_weights[-1]
     assert a < x_weights[0]
+
+    # These are the weights used to compute F, while x_weights are used to compute E
     F_weights = np.array(x_weights[:-1].copy()) + 1e-5
     F_weights = np.insert(F_weights, 0, a)
     m = len(F_weights)
+
+    # Constraints parameters
     lower = np.zeros(m + 1)
     upper = np.ones(m + 1)
     upper[-1] = np.inf
-    alpha = 0
-    constraints = [LinearConstraint(np.eye(m + 1), lower, upper),
-                   {'type': 'eq', 'fun': inequality_const, 'args': (np.ones(m), 1, 0)},
-                   {'type': 'ineq', 'fun': inequality_const, 'args': (x_weights, alpha, -1)}]
-    for i in range(m):
-        a = np.zeros(m)
-        a[i] = 1
-        constraints.append({'type': 'ineq', 'fun': inequality_const, 'args': (a.copy(), -1, -1)})
+    lower_cum = np.zeros(m + 1)
+    for i in range(m - 1):
+        lower_cum[i] = 1 - round(sup_bin(n, min(l // F_weights[i + 1], n), delta), 8)
+    lower_cum[-2], lower_cum[-1] = 0, 1
+    upper_bound = 0
 
-        a = np.zeros(m)
-        for j in range(i + 1):
-            a[j] = 1
-        if i <= 4:
-            constraints.append({'type': 'ineq', 'fun': inequality_const, 'args': (a.copy(), round(sup_bin(n, min(l // F_weights[i + 1], n), delta), 8) - 1, 0)})
-        else:
-            constraints.append({'type': 'ineq', 'fun': inequality_const, 'args': (a.copy(), -1, 1)})
+    # Constraints are defined
+    constraints = [LinearConstraint(np.eye(m + 1), lower, upper),  # Each probability is between 0 and 1
+                   LinearConstraint(np.tri(m + 1), lower_cum, upper),  # Each cumulative probability is upper bounded
+                                                                       #  (see Prop.X) to prevent too small values for F
+                   {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, upper_bound, -1)}]  # Keeps track of the
+                                                                                                    #  best bound seen
     t_init = time()
+    # All the possible loss occurrences (< l) are computed
     combinations = K(n, l, F_weights)
     jac_combinations = []
     for i in range(m):
+        # To accelerate gradient computation, for each dimension index i of p, only the occurences with k_i > 0 are kept
         jac_combinations.append(K_jac(combinations, i))
     print(f"\n(Took {round(time() - t_init, 2)} sec. to compute combinations.)\n")
 
     t_init = time()
-    alphas = [0]
+    upper_bounds = []  # Keep track of the bounds seen
     while True:
         initial_guess = np.zeros(m + 1) + 1 / m  # initial guess can be anything
-        result = minimize(obj, initial_guess, constraints=constraints)
+        result = minimize(obj, initial_guess, constraints=constraints)  # Computes Chebychev center of current region
         if F(result.x[:-1], n, combinations, m) > delta:
             alpha = np.dot(result.x[:-1], x_weights)
             print(f"Current bound value: {round(alpha, 6)}...")
-            weights = result.x[:-1].copy()
-            constraints[2] = {'type': 'ineq', 'fun': inequality_const, 'args': (x_weights, alpha, -1)}
+            # If F > delta, bound computed is valid; updates const. #3 so that each new center must have better bound
+            constraints[2] = {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, alpha, -1)}
         else:
             jac = gradient_F(result.x[:-1], n, jac_combinations)
             if np.sqrt(np.dot(jac, jac)) < 1e-10:
                 jac /= np.sqrt(np.dot(jac, jac))
             bias = np.dot(jac, result.x[:-1])
-            constraints.append({'type': 'ineq', 'fun': inequality_const, 'args': (jac.copy(), bias.copy(), -1)})
+            # If F < delta, bound computed is not valid; add constraint so that new center must have better F than that
+            constraints.append({'type': 'ineq', 'fun': ineq_constraint, 'args': (jac.copy(), bias.copy(), -1)})
 
-        alphas.append(alpha)
-        if len(alphas) > 100:
-            if alphas[-1] - alphas[-100] <= tol:
+        upper_bounds.append(upper_bound)
+        if len(upper_bounds) > 100:
+            if upper_bounds[-1] - upper_bounds[-100] <= tol:
                 break
-    print(f"\nFinal upper bound: {round(alphas[-1], 6)} (took {round(time() - t_init, 2)} sec. to compute, once combinations were computed).")
-    return alphas[-1]
+    print(f"\nFinal upper bound: {round(upper_bounds[-1], 6)} (took {round(time() - t_init, 2)} sec. to compute, once combinations were computed).")
+    return upper_bounds[-1]
 
 n = 10
-l = 1
+l = 2
 delta = 0.05
-a = lower_test_bound(1000, delta)
+a = optimal_test_bound(1000, delta)
 b = 1
-x_weights = [0.1, 0.2, 0.4, 0.6, 0.7, 1]
+x_weights = [0.2, 0.6, 0.8, 1]
 tol = 1e-5
 
-opt(n, l, a, b, x_weights, delta, tol)
+bound_optimization(n, l, a, b, x_weights, delta, tol)

@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 
 def log_stirling_approximation(n):
@@ -88,3 +89,13 @@ def inf_bin(k, m, delta):
             gamma_inf = gamma
         gamma = (gamma_sup + gamma_inf) / 2
     return gamma
+
+def multinomial(lst, n):
+    assert np.sum(lst) == n
+    res = log_stirling_approximation(n)
+    for a in lst:
+        res -= log_stirling_approximation(a)
+    return math.exp(res)
+
+def optimal_test_bound(m, d):
+    return 1 - math.exp(-math.log(1 / d) / m)
