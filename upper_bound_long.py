@@ -87,8 +87,8 @@ def opt(n, l, b, delta, vals, upper):
     return bnd
 
 opt(n = 10,
-    l = 2,
+    l = 1,
     b = 1,
     delta = 0.05,
-    vals = [0.1, 0.2, 0.6, 0.8],
+    vals = [0.2, 0.6, 0.8],
     upper = True)
