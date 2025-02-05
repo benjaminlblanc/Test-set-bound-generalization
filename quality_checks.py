@@ -10,8 +10,6 @@ tol = 1e-5
 for l in [0, 0.1, 1, 2, 2.5, 5, 8, 9.5]:
     for vals in [[0.1, 0.9], [0.2, 0.6, 0.8], [0.2, 0.4, 0.6, 0.8], [0.1, 0.4, 0.5, 0.6, 0.95]]:
         print(f"Computing quality checks with l = {l} and vals = {vals}.")
-        x_weights = vals.copy()
-        x_weights.append(1)
-        bnd_1 = bound_optimization(n, l, a, b, x_weights, delta, tol)
+        bnd_1 = bound_optimization(n, l, a, b, vals, delta, tol)
         bnd_2, delta_constraint = opt(n, l, b, delta, vals, upper=True)
         assert not (delta_constraint > 0 and bnd_2 - bnd_1 > 0.01), "Something's wrong..."

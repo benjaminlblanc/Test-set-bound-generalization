@@ -1,6 +1,7 @@
 from scipy.optimize import minimize, LinearConstraint
 from time import time
 from utils import log_stirling_approximation, sup_bin, optimal_test_bound, multinomial
+from exact_values import compute_test_set_bound
 
 import numpy as np
 import itertools
@@ -8,21 +9,42 @@ import math
 
 
 def K(n, l, weights):
-    possible_values = []
-    for j in range(len(weights)):
-        if j == 0:
-            possible_values.append(list(range(n + 1)))
-        elif l == weights[j]:
-            possible_values.append(list(range(2)))
-        else:
-            val = min(math.floor(l / (weights[j] + 1e-10)), n)
-            possible_values.append(list(range(val + 1)))
+    """
+    Efficiently compute all combinations that:
+    1. Sum to n
+    2. Have weighted sum <= l
 
-    elements = []
-    for element in itertools.product(*possible_values):
-        if np.sum(np.array(element) * np.array(weights)) <= l and np.sum(element) == n:
-            elements.append(element)
-    return elements
+    Parameters:
+    - n: total sum constraint
+    - l: maximum weighted sum
+    - weights: weight for each position
+
+    Returns list of valid combinations
+    """
+
+    def recursive_build(curr_n, curr_l, pos, curr_comb):
+        # Base cases
+        if pos == len(weights):
+            if curr_n == 0 and curr_l <= l:
+                results.append(curr_comb[:])
+            return
+        if curr_n < 0 or curr_l > l:
+            return
+
+        # Maximum possible value at this position
+        max_val = min(curr_n, int(l / weights[pos]) if weights[pos] > 0 else curr_n)
+
+        # Try each possible value at this position
+        for i in range(max_val + 1):
+            curr_comb[pos] = i
+            recursive_build(curr_n - i,
+                            curr_l + i * weights[pos],
+                            pos + 1,
+                            curr_comb)
+
+    results = []
+    recursive_build(n, 0, 0, [0] * len(weights))
+    return results
 
 def K_jac(combinations, i):
     elements = []
@@ -115,10 +137,13 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
     print(f"** Lauching bound computation with the following parameters: n = {n}, l = {l}, a = {round(a, 6)}, b = {b}, "
           f"x_weights = {x_weights}, delta = {delta}, tol = {tol} **")
     # Sanity checks
-    assert b == x_weights[-1]
+    assert l >= a
+    assert x_weights[0] > a
+    assert b > x_weights[-1]
     assert 0 <= a < x_weights[0]
 
     # These are the weights used to compute F, while x_weights are used to compute E
+    x_weights.append(b)
     F_weights = np.array(x_weights[:-1].copy()) + 1e-5
     F_weights = np.insert(F_weights, 0, a)
     m = len(F_weights)
@@ -131,11 +156,11 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
     for i in range(m - 1):
         lower_cum[i] = 1 - round(sup_bin(n, min(l // F_weights[i + 1], n), delta), 6)
     lower_cum[-2], lower_cum[-1] = lower_cum[-3], 1
-    curr_upper_bound = 0
+    curr_upper_bound = compute_test_set_bound(n, l % b, l, b, delta)[0]
 
     # Constraints are defined
     constraints = [LinearConstraint(np.tri(m + 1), lower_cum, upper),  #  (see Prop.X) to prevent too small values for F
-                {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound, -1)}]  # Keeps track of
+                {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound, 0)}]  # Keeps track of
                                                                                                      #  the best bound
     #  Since we are looking for Chebychev center, we need a bounded box to search in. Those constraints are the box
     for i in range(m):
@@ -147,6 +172,7 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
 
     t_init = time()
     # All the possible loss occurrences (< l) are computed
+    print("Computing combinations...")
     combinations = K(n, l, F_weights)
     jac_combinations = []
     for i in range(m):
@@ -155,14 +181,16 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
     print(f"\n(Took {round(time() - t_init, 2)} sec. to compute combinations.)\n")
 
     t_init = time()
-    upper_bounds = [0]  # Keep track of the bounds seen
+    upper_bounds = [curr_upper_bound.copy()]  # Keep track of the bounds seen
+    last_called = 0
     while True:
         initial_guess = np.zeros(m + 1)  # initial guess can be anything
         initial_guess[0], initial_guess[-1] = 0.5, 0.5
         result = minimize(obj, initial_guess, constraints=constraints)  # Computes Chebychev center of current region
         if F(result.x[:-1], n, combinations) > delta:
             curr_upper_bound = np.dot(result.x[:-1], x_weights)
-            if curr_upper_bound - upper_bounds[-1] > 0.005:
+            if curr_upper_bound - last_called > 0.005:
+                last_called = curr_upper_bound.copy()
                 print(f"Current bound value: {round(curr_upper_bound, 6)}...")
             # If F > delta, bound computed is valid; updates const. #3 so that each new center must have better bound
             constraints[1] = {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound.copy(), -1)}
@@ -178,6 +206,7 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
         if len(upper_bounds) > 150:
             if upper_bounds[-1] - upper_bounds[-150] <= tol:
                 break
+    assert upper_bounds[-1] > upper_bounds[0], "Something went wrong :("
     print(f"\nFinal upper bound: {round(upper_bounds[-1], 6)} (took {round(time() - t_init, 2)} sec. to compute, once combinations were computed).")
     return upper_bounds[-1]
 

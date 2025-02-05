@@ -29,7 +29,7 @@ class Func_repartition_tri:
     def compute_prob(self, p):
         prob = 0
         for elements in self.terms:
-            curr = math.log10(multinomial(elements))
+            curr = math.log10(multinomial(elements, np.sum(elements)))
             for j in range(len(self.weights)):
                 curr += elements[j] * math.log10(np.abs(p[j] + 1e-20))
             curr = 10 ** curr
@@ -121,7 +121,6 @@ def compute_test_set_bound(n, mod, total_loss, loss_upper_bound, confidence):
     #mod = (total_loss % loss_upper_bound) / (n - total_loss // loss_upper_bound)
     if mod != 0:
         weights = np.array([0, mod, loss_upper_bound])
-        print(weights)
         p = tri_b(n, total_loss, confidence, weights)
         return np.sum(p * weights), p
     else:
@@ -131,14 +130,13 @@ def compute_test_set_bound(n, mod, total_loss, loss_upper_bound, confidence):
 # Example usage
 def main():
     n = 10  # Number of sample point
-    total_loss = 1  # Number of errors in each category
+    total_loss = 0.1  # Number of errors in each category
     loss_upper_bound = 1  # Type of bound to compute
     delta = 0.05  # 95% confidence level
     for j in [total_loss / n, total_loss % loss_upper_bound]:
         # Initialize and compute bound
         init_time = time()
         test_set_bound, p = compute_test_set_bound(n, j, total_loss, loss_upper_bound, delta)
-        print(test_set_bound, p)
-    print(f"Test Set Bound: {np.round(test_set_bound, 6)}; test average loss: {round(total_loss / n, 4)} (took {round(time()-init_time, 2)} sec. to compute).")
+        print(f"Test Set Bound: {np.round(test_set_bound, 6)}; test average loss: {round(total_loss / n, 4)} (took {round(time()-init_time, 2)} sec. to compute).")
 if __name__ == "__main__":
     main()
