@@ -155,13 +155,15 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
     print(f"\n(Took {round(time() - t_init, 2)} sec. to compute combinations.)\n")
 
     t_init = time()
-    upper_bounds = []  # Keep track of the bounds seen
+    upper_bounds = [0]  # Keep track of the bounds seen
     while True:
-        initial_guess = np.zeros(m + 1) + 1 / m  # initial guess can be anything
+        initial_guess = np.zeros(m + 1)  # initial guess can be anything
+        initial_guess[0], initial_guess[-1] = 0.5, 0.5
         result = minimize(obj, initial_guess, constraints=constraints)  # Computes Chebychev center of current region
         if F(result.x[:-1], n, combinations) > delta:
             curr_upper_bound = np.dot(result.x[:-1], x_weights)
-            print(f"Current bound value: {round(curr_upper_bound, 6)}...")
+            if curr_upper_bound - upper_bounds[-1] > 0.005:
+                print(f"Current bound value: {round(curr_upper_bound, 6)}...")
             # If F > delta, bound computed is valid; updates const. #3 so that each new center must have better bound
             constraints[1] = {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound.copy(), -1)}
         else:

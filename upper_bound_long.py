@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 from scipy.optimize import minimize, LinearConstraint
 from time import time
 
@@ -75,20 +74,17 @@ def opt(n, l, b, delta, vals, upper):
     t_init = time()
     print("Computing...")
     result = minimize(obj, initial_guess, args=weights_obj, constraints=cons)
-    print(result.x)
-    print(const_1(result.x, elements, weights, delta))
-    print(weights)
-    print(weights_obj)
+    delta_constraint = const_1(result.x, elements, weights, delta)
     bnd = sum(weights_obj * result.x)
     if upper:
         print(f"Upper bound: {round(bnd, 4)} (took {round(time() - t_init, 2)} sec. to compute).\n")
     else:
         print(f"Lower bound: {round(bnd, 4)} (took {round(time() - t_init, 2)} sec. to compute).\n")
-    return bnd
+    return bnd, delta_constraint
 
 opt(n = 10,
     l = 0,
     b = 1,
     delta = 0.05,
-    vals = [0.2, 0.6, 0.8, 1],
+    vals = [0.2, 0.6, 0.8],
     upper = True)
