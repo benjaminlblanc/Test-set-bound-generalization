@@ -135,7 +135,7 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
 
     # Constraints are defined
     constraints = [LinearConstraint(np.tri(m + 1), lower_cum, upper),  #  (see Prop.X) to prevent too small values for F
-                {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound, 0)}]  # Keeps track of
+                {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound, -1)}]  # Keeps track of
                                                                                                      #  the best bound
     #  Since we are looking for Chebychev center, we need a bounded box to search in. Those constraints are the box
     for i in range(m):
@@ -163,7 +163,7 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
             curr_upper_bound = np.dot(result.x[:-1], x_weights)
             print(f"Current bound value: {round(curr_upper_bound, 6)}...")
             # If F > delta, bound computed is valid; updates const. #3 so that each new center must have better bound
-            constraints[2] = {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound.copy(), -1)}
+            constraints[1] = {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound.copy(), -1)}
         else:
             jac = gradient_F(result.x[:-1], n, jac_combinations)
             if np.sqrt(np.dot(jac, jac)) < 1e-10:
@@ -180,7 +180,7 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
     return upper_bounds[-1]
 
 n = 10
-l = 1
+l = 0
 delta = 0.05
 a = 0#optimal_test_bound(1000, delta)
 b = 1

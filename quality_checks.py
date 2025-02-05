@@ -7,7 +7,7 @@ b = 1
 delta = 0.05
 tol = 1e-5
 
-for l in [1, 2, 5, 9]:
+for l in [0, 1, 2, 5, 9]:
     for vals in [[0.1, 0.9], [0.2, 0.6, 0.8], [0.2, 0.4, 0.6, 0.8]]:
         print(f"Computing with l = {l} and vals = {vals}.")
         x_weights = vals.copy()
