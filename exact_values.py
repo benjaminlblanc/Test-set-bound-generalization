@@ -129,8 +129,8 @@ def compute_test_set_bound(n, mod, total_loss, loss_upper_bound, confidence):
 
 # Example usage
 def main():
-    n = 10  # Number of sample point
-    total_loss = 0.1  # Number of errors in each category
+    n = 100  # Number of sample point
+    total_loss = 1  # Number of errors in each category
     loss_upper_bound = 1  # Type of bound to compute
     delta = 0.05  # 95% confidence level
     for j in [total_loss / n, total_loss % loss_upper_bound]:

@@ -1,10 +1,9 @@
 from scipy.optimize import minimize, LinearConstraint
 from time import time
-from utils import log_stirling_approximation, sup_bin, optimal_test_bound, multinomial
+from utils import log_stirling_approximation, sup_bin, multinomial
 from exact_values import compute_test_set_bound
 
 import numpy as np
-import itertools
 import math
 
 
@@ -78,7 +77,7 @@ def gradient_F(p, n, combinations):
     - Gradient vector representing sensitivity of F to each parameter
     """
     # Ensure probabilities sum to 1 and are positive
-    p = np.maximum(p, 1e-10)
+    p = np.maximum(p, 1e-4)
     p = p / np.sum(p)
     m = len(p)
 
@@ -86,44 +85,35 @@ def gradient_F(p, n, combinations):
     gradient = np.zeros(m)
 
     # Iterate through each parameter
-    for i in range(m):
-        # Compute sensitivity for this parameter
-        param_sensitivity = 0
+    # Compute sensitivity for this parameter
+    param_sensitivity = np.zeros(m)
 
-        # Iterate through all valid combinations
-        for k in combinations[i]:
-            # Compute probability of this combination
-            try:
-                # Log-probability to avoid numerical issues
-                log_prob = (
-                        log_stirling_approximation(n) -  # Multinomial coefficient
-                        sum(log_stirling_approximation(k_j) for k_j in k)  # Individual coefficients
-                )
+    # Iterate through all valid combinations
+    for k in combinations:
+        # Compute probability of this combination
+        try:
+            # Log-probability to avoid numerical issues
+            log_prob = (
+                    log_stirling_approximation(n) -  # Multinomial coefficient
+                    sum(log_stirling_approximation(k_j) for k_j in k)  # Individual coefficients
+            )
 
-                # Add log probabilities of each parameter
-                for j in range(m):
-                    # Careful handling of zero probabilities
-                    log_prob += k[j] * (np.log(p[j]) if p[j] > 0 else -np.inf)
+            # Add log probabilities of each parameter
+            log_prob += np.sum(k * np.log(p))
 
-                # Probability of the combination
-                combination_prob = np.exp(log_prob)
+            # Probability of the combination
+            combination_prob = np.exp(log_prob)
 
-                # Derivative of log-probability with respect to parameter i
-                # This is k[i]/p[i] when p[i] > 0
-                if p[i] > 0:
-                    log_prob_derivative = k[i] / p[i] if k[i] > 0 else 0
-                else:
-                    log_prob_derivative = 0
+            # Derivative of log-probability with respect to parameter i
+            log_prob_derivative = k / p
 
-                # Accumulate gradient component
-                param_sensitivity += combination_prob * log_prob_derivative
+            # Accumulate gradient component
+            param_sensitivity += combination_prob * log_prob_derivative
 
-            except Exception as e:
-                # Log any unexpected computational errors
-                print(f"Error processing combination {k}: {e}")
-
-        gradient[i] = param_sensitivity
-
+        except Exception as e:
+            # Log any unexpected computational errors
+            print(f"Error processing combination {k}: {e}")
+    gradient = param_sensitivity
     return gradient
 
 def ineq_constraint(p, weights, alpha, tol):
@@ -137,19 +127,15 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
     print(f"** Lauching bound computation with the following parameters: n = {n}, l = {l}, a = {round(a, 6)}, b = {b}, "
           f"x_weights = {x_weights}, delta = {delta}, tol = {tol} **")
     # Sanity checks
-    assert l >= a
-    assert x_weights[0] > a
-    assert b > x_weights[-1]
+    assert b == x_weights[-1]
     assert 0 <= a < x_weights[0]
 
     # These are the weights used to compute F, while x_weights are used to compute E
-    x_weights.append(b)
     F_weights = np.array(x_weights[:-1].copy()) + 1e-5
     F_weights = np.insert(F_weights, 0, a)
     m = len(F_weights)
 
     # Constraints parameters
-    lower = np.zeros(m + 1)
     upper = np.ones(m + 1)
     upper[-1] = np.inf
     lower_cum = np.zeros(m + 1)
@@ -195,7 +181,7 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
             # If F > delta, bound computed is valid; updates const. #3 so that each new center must have better bound
             constraints[1] = {'type': 'ineq', 'fun': ineq_constraint, 'args': (x_weights, curr_upper_bound.copy(), -1)}
         else:
-            jac = gradient_F(result.x[:-1], n, jac_combinations)
+            jac = gradient_F(result.x[:-1], n, combinations)
             if np.sqrt(np.dot(jac, jac)) < 1e-10:
                 jac /= np.sqrt(np.dot(jac, jac))
             bias = np.dot(jac, result.x[:-1])
@@ -203,19 +189,21 @@ def bound_optimization(n, l, a, b, x_weights, delta, tol):
             constraints.append({'type': 'ineq', 'fun': ineq_constraint, 'args': (jac.copy(), bias.copy(), -1)})
 
         upper_bounds.append(curr_upper_bound)
-        if len(upper_bounds) > 150:
-            if upper_bounds[-1] - upper_bounds[-150] <= tol:
+        if len(upper_bounds) > 125:
+            if upper_bounds[-1] - upper_bounds[-125] <= tol:
                 break
     assert upper_bounds[-1] > upper_bounds[0], "Something went wrong :("
     print(f"\nFinal upper bound: {round(upper_bounds[-1], 6)} (took {round(time() - t_init, 2)} sec. to compute, once combinations were computed).")
+    print(result.x[:-1])
+    print(x_weights)
     return upper_bounds[-1]
 
-n = 10
-l = 0
+n = 100
+l = 1
 delta = 0.05
-a = 0#optimal_test_bound(1000, delta)
+a = 0
 b = 1
-x_weights = [0.2, 0.6, 0.8]
+x_weights = [0.02, 0.0625, 0.25, 0.5, 0.75, 1]
 tol = 1e-5
 
 bound_optimization(n, l, a, b, x_weights, delta, tol)
